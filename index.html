@@ -1,0 +1,455 @@
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Final Project</title>
+
+    <script src="controls.js" defer></script>
+
+    <link href=' http://fonts.googleapis.com/css?family=Inter' rel='stylesheet' type='text/html'>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+        <div class="left">
+            <img src="logo.png" alt="Modular Chair Builder Logo">
+            <div id="controls">
+                <table>
+                    <tr id="backControls">
+                        <th>Chair Back</th>
+                        <td class="colorPicker"><input type="color" id="backColorPicker" value="#FF6EFF"></td>
+                        <td><label><input type="radio" name="backType" id="back1" checked> Cylinder</label>
+                            <label><input type="radio" name="backType" id="back2"> Torus</label>
+                            <label><input type="radio" name="backType" id="back3"> Rectangular Prism</label></td>
+                    </tr>
+                    <tr id="seatControls">
+                        <th>Chair Seat</th>
+                        <td class="colorPicker"><input type="color" id="seatColorPicker" value="#9999FF"></td>
+                        <td><label><input type="radio" name="seatType" id="seat1" checked> Rectangular Prism</label>
+                            <label><input type="radio" name="seatType" id="seat2"> Octahedron</label>
+                            <label><input type="radio" name="seatType" id="seat3"> Sphere</label></td>
+                    </tr>
+                    <tr id="legControls">
+                        <th>Chair Legs</th>
+                        <td class="colorPicker"><input type="color" id="legColorPicker" value="#FFFFFF"></td>
+                        <td><label><input type="radio" name="legType" id="leg1" checked> Rectangular Prism</label>
+                            <label><input type="radio" name="legType" id="leg2"> Octahedron</label>
+                            <label><input type="radio" name="legType" id="leg3"> Cylinder</label></td>
+                    </tr>
+                    <tr id="thicknessControls">
+                        <th>Thickness</th>
+                        <td><input type="range" id="thicknessSlider" min="0.5" max="1" step="0.05" value="0.75"></td>
+                    </tr>
+                    <tr id="rotationControls">
+                        <th class="rotationText"><label for="rotationSlider">View</label></th>
+                        <td><input type="range" id="rotationSlider" min="-180" max="180" step="1" value="0"></td>
+                        <td class="rotationText"><span id="rotationValue">0</span> degrees</td>
+                    </tr>
+                    
+                </table>
+                
+            </div>
+        </div>
+
+        <canvas id='canvas1' color=blue width=600 height=600></canvas>
+
+        <script>
+            let mIdentity = () => [ 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1 ];
+    
+            let mInverse = m => {
+            let dst = [], det = 0, cofactor = (c, r) => {
+                let s = (i, j) => m[c+i & 3 | (r+j & 3) << 2];
+                return (c+r & 1 ? -1 : 1) * ( (s(1,1) * (s(2,2) * s(3,3) - s(3,2) * s(2,3)))
+                                            - (s(2,1) * (s(1,2) * s(3,3) - s(3,2) * s(1,3)))
+                                            + (s(3,1) * (s(1,2) * s(2,3) - s(2,2) * s(1,3))) );
+            }
+            for (let n = 0 ; n < 16 ; n++) dst.push(cofactor(n >> 2, n & 3));
+            for (let n = 0 ; n <  4 ; n++) det += m[n] * dst[n << 2]; 
+            for (let n = 0 ; n < 16 ; n++) dst[n] /= det;
+            return dst;
+            }
+            let matrixMultiply = (a, b) => {
+            let dst = [];
+            for (let n = 0 ; n < 16 ; n++)
+                dst.push(a[n&3]*b[n&12] + a[n&3|4]*b[n&12|1] + a[n&3|8]*b[n&12|2] + a[n&3|12]*b[n&12|3]);
+            return dst;
+            }
+            let mTranslate = (tx,ty,tz, m) => {
+            return matrixMultiply(m, [1,0,0,0, 0,1,0,0, 0,0,1,0, tx,ty,tz,1]);
+            }
+            let mRotateX = (theta, m) => {
+            let c = Math.cos(theta), s = Math.sin(theta);
+            return matrixMultiply(m, [1,0,0,0, 0,c,s,0, 0,-s,c,0, 0,0,0,1]);
+            }
+            let mRotateY = (theta, m) => {
+            let c = Math.cos(theta), s = Math.sin(theta);
+            return matrixMultiply(m, [c,0,-s,0, 0,1,0,0, s,0,c,0, 0,0,0,1]);
+            }
+            let mRotateZ = (theta, m) => {
+            let c = Math.cos(theta), s = Math.sin(theta);
+            return matrixMultiply(m, [c,s,0,0, -s,c,0,0, 0,0,1,0, 0,0,0,1]);
+            }
+            let mScale = (sx,sy,sz, m) => {
+            return matrixMultiply(m, [sx,0,0,0, 0,sy,0,0, 0,0,sz,0, 0,0,0,1]);
+            }
+            let mPerspective = (fl, m) => {
+            return matrixMultiply(m, [1,0,0,0, 0,1,0,0, 0,0,1,-1/fl, 0,0,0,1]);
+            }
+
+            // initialize WebGL and set up the rendering program
+            let start_gl = (canvas, meshData, vertexSize, vertexShader, fragmentShader) => {
+                let gl = canvas.getContext("webgl");
+                let program = gl.createProgram();
+                gl.program = program;
+
+                // add a shader
+                let addshader = (type, src) => {
+                    let shader = gl.createShader(type);
+                    gl.shaderSource(shader, src);
+                    gl.compileShader(shader);
+                    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS))
+                        throw "Cannot compile shader:\n\n" + gl.getShaderInfoLog(shader);
+                    gl.attachShader(program, shader);
+                };
+
+                // add vertex and fragment shaders
+                addshader(gl.VERTEX_SHADER, vertexShader);
+                addshader(gl.FRAGMENT_SHADER, fragmentShader);
+
+                gl.linkProgram(program);
+                if (!gl.getProgramParameter(program, gl.LINK_STATUS))
+                    throw "Could not link the shader program!";
+
+                gl.useProgram(program);
+
+                // set up vertex attributes
+                gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+                gl.enable(gl.DEPTH_TEST);
+                gl.depthFunc(gl.LEQUAL);
+
+                let vertexAttribute = (name, size, position) => {
+                    let attr = gl.getAttribLocation(program, name);
+                    gl.enableVertexAttribArray(attr);
+                    gl.vertexAttribPointer(attr, size, gl.FLOAT, false, vertexSize * 4, position * 4);
+                }
+
+                // define vertex attributes for position and normal
+                vertexAttribute('aPos', 3, 0);
+                vertexAttribute('aNor', 3, 3);
+
+                return gl;
+            }
+
+                    let createMesh1 = (nu, nv, p) => {
+            let mesh = [];
+            for (let j = 0 ; j < nv ; j++)
+            for (let i = 0 ; i < nu ; i++) {
+                let u = i/nu, v = j/nv;
+                let p00 = p(u     , v     );
+                let p10 = p(u+1/nu, v     );
+                let p01 = p(u     , v+1/nv);
+                let p11 = p(u+1/nu, v+1/nv);
+                mesh.push(p00, p10, p11);
+                mesh.push(p11, p01, p00);
+            }
+            return mesh.flat();
+            }
+            
+            let createMesh = (nu, nv, p) => {
+            let mesh = [];
+            for (let j = nv ; j > 0 ; j--) {
+                for (let i = 0 ; i <= nu ; i++)
+                    mesh.push(p(i/nu,j/nv), p(i/nu,j/nv-1/nv));
+                mesh.push(p(1,j/nv-1/nv), p(0,j/nv-1/nv));
+            }
+            return mesh.flat();
+            }
+
+            let disk = (nu, nv) => createMesh(nu, nv, (u,v) => {
+                let theta = 2 * Math.PI * u;
+                let x = v * Math.cos(theta),
+                    y = v * Math.sin(theta);
+                return [ x,y,0, 0,0,1 ];
+            });
+
+            let sphere = (nu, nv) => createMesh(nu, nv, (u,v) => {
+                let theta = 2 * Math.PI * u;
+                let phi = Math.PI * (v - .5);
+                let x = Math.cos(phi) * Math.cos(theta),
+                    y = Math.cos(phi) * Math.sin(theta),
+                    z = Math.sin(phi);
+                return [ x,y,z, x,y,z ];
+            });
+
+            let cylinder = (nu, nv) => createMesh(nu, nv, (u,v) => {
+                let theta = 2 * Math.PI * u;
+                let x = Math.cos(theta),
+                    y = Math.sin(theta);
+                switch (5 * v >> 0) {
+                    case 0: return [ 0,0,-1, 0,0,-1 ];
+                    case 1: return [ x,y,-1, 0,0,-1 ];
+                    case 2: return [ x,y,-1, x,y, 0 ];
+                    case 3: return [ x,y, 1, x,y, 0 ];
+                    case 4: return [ x,y, 1, 0,0, 1 ];
+                    case 5: return [ 0,0, 1, 0,0, 1 ];
+                }
+            });
+            
+            let torus = (nu, nv) => createMesh(nu, nv, (u,v) => {
+            let theta = 2 * Math.PI * u;
+            let phi   = 2 * Math.PI * v;
+            let ct = Math.cos(theta), cp = Math.cos(phi);
+            let st = Math.sin(theta), sp = Math.sin(phi);
+            let x = (1 + .5 * cp) * ct,
+                y = (1 + .5 * cp) * st,
+                z =      .5 * sp;
+            return [ x,y,z, cp*ct,cp*st,sp ];
+            });
+
+            let halfSphere = (nu, nv) => createMesh(nu, nv, (u, v) => {
+            let theta = 2 * Math.PI * u;
+            let phi = Math.PI * v;
+            let x = Math.cos(phi) * Math.cos(theta),
+                y = Math.cos(phi) * Math.sin(theta),
+                z = Math.sin(phi);
+            return [x, y, z, x, y, z];
+            });
+            
+            let strToTris = str => {
+            let tris = [];
+            for (let n = 0 ; n < str.length ; n++)
+                switch (str.charAt(n)) {
+                case 'N': tris.push(-1    ); break;
+                case 'n': tris.push(-0.577); break;
+                case '0': tris.push( 0    ); break;
+                case 'p': tris.push( 0.577); break;
+                case 'P': tris.push( 1    ); break;
+                }
+            return tris;
+            }
+            
+            let cube = strToTris(`PNP00P PPP00P NPP00P  NPP00P NNP00P PNP00P
+                                NPN00N PPN00N PNN00N  PNN00N NNN00N NPN00N
+                                PPNP00 PPPP00 PNPP00  PNPP00 PNNP00 PPNP00
+                                NNPN00 NPPN00 NPNN00  NPNN00 NNNN00 NNPN00
+                                NPP0P0 PPP0P0 PPN0P0  PPN0P0 NPN0P0 NPP0P0
+                                PNN0N0 PNP0N0 NNP0N0  NNP0N0 NNN0N0 PNN0N0`);
+
+            let octahedron = strToTris(`00Nnnn 0N0nnn N00nnn  P00pnn 0N0pnn 00Npnn
+                            N00npn 0P0npn 00Nnpn  00Nppn 0P0ppn P00ppn
+                            00Pnnp 0N0nnp N00nnp  P00pnp 0N0pnp 00Ppnp
+                            N00npp 0P0npp 00Pnpp  00Pppp 0P0ppp P00ppp`);
+            
+            // 3 seats, 3 backs, 3 * 4 legs
+            let meshData = [
+            // seats
+            { type: 0, color: [.1,1.,1.], mesh: new Float32Array(cube) },
+            { type: 0, color: [1.,1.,1.], mesh: new Float32Array(octahedron) },
+            { type: 1, color: [0.6, 0.12, 0.05], mesh: new Float32Array(sphere(30, 10)) },
+            // backs
+            { type: 1, color: [1.,1.,.1], mesh: new Float32Array(cylinder(20, 6)) },
+            { type: 1, color: [1.,.1,1.], mesh: new Float32Array(torus(20, 20)) },
+            { type: 0, color: [.1,1.,1.], mesh: new Float32Array(cube) },
+            // legs
+            { type: 0, color: [.1,.1,1.], mesh: new Float32Array(cube) },
+            { type: 0, color: [.1,.1,1.], mesh: new Float32Array(cube) },
+            { type: 0, color: [.1,.1,1.], mesh: new Float32Array(cube) },
+            { type: 0, color: [.1,.1,1.], mesh: new Float32Array(cube) },
+            { type: 0, color: [1.,1.,1.], mesh: new Float32Array(octahedron) },
+            { type: 0, color: [1.,1.,1.], mesh: new Float32Array(octahedron) },
+            { type: 0, color: [1.,1.,1.], mesh: new Float32Array(octahedron) },
+            { type: 0, color: [1.,1.,1.], mesh: new Float32Array(octahedron) },
+            { type: 1, color: [1.,1.,.1], mesh: new Float32Array(cylinder(20, 6)) },
+            { type: 1, color: [1.,1.,.1], mesh: new Float32Array(cylinder(20, 6)) },
+            { type: 1, color: [1.,1.,.1], mesh: new Float32Array(cylinder(20, 6)) },
+            { type: 1, color: [1.,1.,.1], mesh: new Float32Array(cylinder(20, 6)) },
+            // { type: 1, color: [0.6, 0.12, 0.05], mesh: new Float32Array(sphere(30, 10)) },
+            // { type: 1, color: [0.6, 0.12, 0.05], mesh: new Float32Array(sphere(30, 10)) },
+            // { type: 1, color: [0.6, 0.12, 0.05], mesh: new Float32Array(sphere(30, 10)) },
+            // { type: 1, color: [0.6, 0.12, 0.05], mesh: new Float32Array(sphere(30, 10)) },
+            ];
+            
+            let vertexSize = 6;
+            let vertexShader = `
+            attribute vec3 aPos, aNor;
+            uniform mat4 uMatrix, uInvMatrix;
+            varying vec3 vPos, vNor;
+            void main() {
+                vec4 pos = uMatrix * vec4(aPos, 1.0);
+                vec4 nor = vec4(aNor, 0.0) * uInvMatrix;
+                vPos = pos.xyz;
+                vNor = nor.xyz;
+                gl_Position = pos * vec4(1.,1.,-.1,1.);
+            }
+            `;
+
+            let fragmentShader = `
+            precision mediump float;
+            uniform vec3 uColor;
+            uniform vec3 lightPos;
+            uniform vec3 viewPos;
+
+            varying vec3 vPos, vNor;
+            void main(void) {
+                // ambient component
+                // vec3 ambient = 0.15 * (uColor + 0.6 * vec3(1., 0.8, 0.8));
+                vec3 ambient = 0.3 * uColor;
+
+                // diffuse component
+                vec3 lightDir = normalize(lightPos - vPos);
+                float diff = max(dot(normalize(vNor), lightDir), 0.0);
+                // vec3 diffuse = diff * uColor;
+                vec3 diffuse = 0.7 * diff * uColor;
+
+                // specular component
+                vec3 viewDir = normalize(viewPos - vPos);
+                vec3 reflectDir = reflect(-lightDir, normalize(vNor));
+                vec3 reflectColor = uColor + 0.5 * vec3(1., 0.8, 0.8);
+
+                // float spec = pow(max(dot(viewDir, reflectDir), 0.0), 80.0);
+                float spec = pow(max(dot(normalize(vNor), vec3(.57)), 0.0), 20.);
+                vec3 specular = reflectColor * spec;
+                
+                // final color calculation
+                vec3 result = ambient + diffuse + specular;
+                gl_FragColor = vec4(sqrt(result), 1.0);
+            }
+            `;
+    
+            // start the WebGL rendering
+            setTimeout(() => {
+                let gl = start_gl(canvas1, meshData, vertexSize, vertexShader, fragmentShader);
+
+                let uColor = gl.getUniformLocation(gl.program, "uColor");
+                let uMatrix = gl.getUniformLocation(gl.program, "uMatrix");
+                let uInvMatrix = gl.getUniformLocation(gl.program, "uInvMatrix");
+
+                let startTime = Date.now() / 1000;
+
+                // set up animation loop
+                setInterval(() => {
+                    let time = Date.now() / 1000 - startTime;
+
+                    for (let n = 0; n < meshData.length; n++) {
+
+                        let m = mIdentity();
+
+                        // apply perspective projection to the transformation matrix
+                        m = mPerspective(3, m);
+
+                        // rotate the scene around the Y-axis over time
+                        m = mRotateY(time, m);
+
+                        // rotate the scene around the X-axis based on slider value
+                        m = mRotateX((rotationAngleX * Math.PI) / 180.0, m);
+
+                        let triIndex = Math.floor(n / 3);
+
+                        // affects chair backs and seats
+                        if (n >= 0 && n <= 5) {
+                            // translate and scale each mesh
+                            // vertical distance between back and seat
+                            m = mTranslate(0, 1.85 * (triIndex / 4), 0.7 * (triIndex / 4), m);
+                        }
+
+                        // scale all meshes
+                        m = mScale(.35, .35, .35, m);
+                        
+                        // targeted transformations for each shape
+                        if (n === 0) {
+                            // scale rectangular seat to be flatter
+                            m = mScale(1., 0.2 * thickness, 1., m);
+                        } else if (n === 1) {
+                            // scale octahedron seat to be flatter
+                            m = mScale(1.5, 0.3 * thickness, 1.5, m);
+                            m = mRotateY(Math.PI/4, m);
+                        } else if (n === 2) {
+                            // scale sphere seat to be flatter
+                            m = mScale(1.5, 0.3 * thickness, 1.5, m);
+                            m = mTranslate(0, -0.3, 0, m);
+                        } else if (n === 3) {
+                            // scale cylinder back to be thinner
+                            m = mScale(1., 1., 0.2 * thickness, m);
+                            // translate back to align with edge of seat
+                            m = mTranslate(0, -0.5 * (triIndex / 4) / thickness, 6 * (triIndex / 4) / thickness, m);
+
+                        } else if (n === 4) {
+                            // scale torus back to be smaller
+                            m = mScale(0.7, 0.7, 0.7 * thickness, m);
+                            // translate back to align with edge of seat
+                            m = mTranslate(0, -0.5 * (triIndex / 4) / thickness, 3 * (triIndex / 4) / thickness, m);
+
+                        } else if (n === 5) {
+                            // scale rectangular back to be smaller
+                            m = mScale(1., 1., 0.2 * thickness, m);
+                            // translate back to align with edge of seat
+                            m = mTranslate(0, -0.5 * (triIndex / 4) / thickness, 6 * (triIndex / 4) / thickness, m);
+
+                        } else if (n >= 6 && n <= 9) {
+                            // scale leg to be smaller
+                            m = mScale(0.2 * thickness, 1., 0.2 * thickness, m);
+                            // translate to be arranged in a square around the seat
+                            let angle = (2 * Math.PI * n) / 4 + Math.PI / 4; // 45-degree offset
+                            let c = 10 * Math.cos(angle);
+                            let s = 10 * Math.sin(angle);
+                            m = mTranslate(s * 0.563 / thickness, -1., c * 0.563 / thickness, m);
+                        }  else if (n >= 10 && n <= 13) {
+                            // scale leg to be smaller
+                            m = mScale(0.2 * thickness, 1., 0.2 * thickness, m);
+                            // translate to be arranged in a square around the seat
+                            let angle = (2 * Math.PI * n) / 4 + Math.PI / 4; // 45-degree offset
+                            let c = 10 * Math.cos(angle);
+                            let s = 10 * Math.sin(angle);
+                            m = mTranslate(s * 0.563 / thickness, -1., c * 0.563 / thickness, m);
+                        }  else if (n >= 14 && n <= 17) {
+                            // scale leg to be smaller
+                            m = mScale(0.2 * thickness, 1., 0.2 * thickness, m);
+                            // translate to be arranged in a square around the seat
+                            let angle = (2 * Math.PI * n) / 4 + Math.PI / 4; // 45-degree offset
+                            let c = 10 * Math.cos(angle);
+                            let s = 10 * Math.sin(angle);
+                            m = mTranslate(s * 0.563 / thickness, -1., c * 0.563 / thickness, m);
+                            m = mRotateX(Math.PI/2, m);
+                        }
+
+                        // color updates
+                        if (n === 0 || n === 1 || n === 2) {
+                            meshData[n].color = seatColor;
+                        } else if (n === 3 || n === 4 || n === 5) {
+                            meshData[n].color = backColor;
+                        } else {
+                            meshData[n].color = legColor;
+                        }
+
+                        // set uniform values for color, transformation matrix, and its inverse
+                        gl.uniform3fv(uColor, meshData[n].color);
+                        gl.uniformMatrix4fv(uMatrix, false, m);
+                        gl.uniformMatrix4fv(uInvMatrix, false, mInverse(m));
+
+                        // set the vertex data for the current mesh
+                        let mesh = meshData[n].mesh;
+                        gl.bufferData(gl.ARRAY_BUFFER, mesh, gl.STATIC_DRAW);
+
+                        // draw the mesh with either TRIANGLE_STRIP or TRIANGLES based on the mesh type
+                        if ((n === 0 && selectedSeatType === 'seat1') || 
+                            (n === 1 && selectedSeatType === 'seat2') || 
+                            (n === 2 && selectedSeatType === 'seat3') ||
+                            (n === 3 && selectedBackType === 'back1') || 
+                            (n === 4 && selectedBackType === 'back2') || 
+                            (n === 5 && selectedBackType === 'back3') ||
+                            ((n >= 6 && n <= 9) && selectedLegType === 'leg1') || 
+                            ((n >= 10 && n <= 13) && selectedLegType === 'leg2') ||
+                            ((n >= 14 && n <= 17) && selectedLegType === 'leg3')
+                            ) {
+                                gl.drawArrays(meshData[n].type ? gl.TRIANGLE_STRIP : gl.TRIANGLES, 0, mesh.length / vertexSize);
+                        }
+                    }
+                }, 30);
+            }, 100);
+        </script>
+</body>
+
+</html>

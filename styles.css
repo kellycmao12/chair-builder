@@ -1,0 +1,82 @@
+body {
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+}
+
+img {
+    width: 60%;
+    display: block;
+}
+
+canvas {
+    width: 90%;
+    height: 90%;
+    /* border: 1px solid red; */
+}
+
+.left {
+    width: 80%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+}
+
+table {
+    border-collapse: collapse;
+    margin: 20px; /* Add some margin between tables */
+}
+
+th {
+    padding: 6px 20px;
+    vertical-align: top;
+}
+
+td {
+    padding: 0px 10px;
+    vertical-align: top;
+}
+
+td > label {
+    display: block;
+    padding: 5px 0;
+}
+
+#controls {
+    display: inline-block;
+    text-align: left;
+    vertical-align: top;
+}
+
+#rotationSlider {
+    appearance: slider-vertical;
+    width: 25px;
+}
+
+.rotationText {
+    height: 135px;
+    line-height: 135px;
+}
+
+#rotationValue, #thicknessValue {
+    padding-left: 5px;
+}
+
+.colorPicker, .empty {
+    width: 25px;
+}
+
+input[type="color"] {
+    appearance: none;
+    -moz-appearance: none;
+    -webkit-appearance: none;
+    background: none;
+    border: 0;
+    cursor: pointer;
+    height: 30px;
+    padding: 0;
+    width: 25px;
+}
